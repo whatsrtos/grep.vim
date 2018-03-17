@@ -1,8 +1,7 @@
 " File: grep.vim
 " Author: Yegappan Lakshmanan (yegappan AT yahoo DOT com)
-" Version: 1.11
-" Last Modified: April 24, 2013
-" 
+" Version: 1.11c
+" Last Modified: Sep 21, 2015
 " Overview
 " --------
 " The grep plugin integrates the grep, fgrep, egrep, and agrep tools with
@@ -38,6 +37,7 @@
 " -----
 " The grep.vim plugin introduces the following Vim commands:
 "
+" :VimGrepStr    - 
 " :Grep          - Search for the specified pattern in the specified files
 " :GrepAdd       - Same as ":Grep" but adds the results to the current results
 " :Rgrep         - Run recursive grep
@@ -69,6 +69,7 @@
 " :Ragrep        - Run recursive agrep
 " :RagrepAdd     - Same as ":Ragrep" but adds the results to the current
 "                  results
+" :SetGrepOpt       - Set grep default options, default is '-s -w'
 "
 " The above commands can be invoked like this:
 "
@@ -405,6 +406,290 @@ if !exists("Grep_Skip_Files")
     let Grep_Skip_Files = '*~ *,v s.*'
 endif
 
+" @deprecated
+function! s:SetGrepOption()
+    let g:Grep_Default_Options = input("Default grep options, e.g. -i(ignore case) , -w(whole word) : ", g:Grep_Default_Options)
+    echo "\r"
+endfunction
+
+" @update
+if !exists("Grep_Recursive")
+    let Grep_Recursive = 1
+endif
+
+if !exists("Grep_IgnoreCase")
+    let Grep_IgnoreCase = 1
+endif
+
+if !exists("Grep_WholeWord")
+    let Grep_WholeWord = 0
+endif
+
+if !exists("Grep_ExpReg")
+    let Grep_ExpReg = 0
+endif
+
+if !exists("s:Search_Directory")
+    let s:Search_Directory = getcwd()
+endif
+
+let s:Search_Word = ""
+
+let s:OptionsMenuOpen = 0
+
+function! s:OnOrOff(num)
+    return a:num == 0 ? 'off' : 'on'
+endfunction
+
+" Search Option Menu
+function! s:CreateOptions()
+    " add findstr options
+    let s:Options = []
+    call add(s:Options, "\"q: Quit")
+    call add(s:Options, "\"r: Recursive mode (".s:OnOrOff(g:Grep_Recursive).")")
+    call add(s:Options, "\"i: Ignore case (".s:OnOrOff(g:Grep_IgnoreCase).")")
+    call add(s:Options, "\"w: Whole word (".s:OnOrOff(g:Grep_WholeWord).")")
+    call add(s:Options, "\"p: Regular expression (".s:OnOrOff(g:Grep_ExpReg).")")
+    call add(s:Options, "")
+    call add(s:Options, "\"f: Search files: " . g:Grep_Default_Filelist)
+    call add(s:Options, "\"d: Search directory: " . s:Search_Directory)
+    call add(s:Options, "\"c: Search Word: " . s:Search_Word)
+endfunction
+
+function! s:MapOptionKeys()
+    nnoremap <buffer> <silent> q    :call <sid>Quit()<cr>
+    nnoremap <buffer> <silent> r    :call <sid>ToggleRecursion()<cr>
+    nnoremap <buffer> <silent> i    :call <sid>ToggleIgnoreCase()<cr>
+    nnoremap <buffer> <silent> w    :call <sid>ToggleWholeWord()<cr>
+    nnoremap <buffer> <silent> p    :call <sid>ToggleRegExp()<cr>
+    nnoremap <buffer> <silent> f    :call <sid>SetSearchFiles()<cr>
+    nnoremap <buffer> <silent> d    :call <sid>SetSearchDirectory()<cr>
+    nnoremap <buffer> <silent> c    :call <sid>SetSearchWord()<cr>
+    nnoremap <buffer> <silent> <Enter> :call <sid>ExecGrep()<cr>
+endfunction
+
+function! s:RefreshAllOptions()    
+    if !s:OptionsMenuOpen
+        return
+    endif
+
+    call s:CreateOptions()
+    setlocal modifiable
+    let lastLine = len(s:Options)
+    let line = 0
+    while line < lastLine
+        call setline(line+1, s:Options[line])
+        let line += 1
+    endwhile
+
+    setlocal nomodifiable
+endfunction
+
+function! s:SetSearchDirectory()
+    let s:Search_Directory = input("Search Directory: ", s:Search_Directory)
+    echo "\r"
+    call s:RefreshAllOptions()
+    call s:Echo("Set Search Directory to (" . s:Search_Directory .")")
+endfunction
+
+function! s:SetSearchWord()
+    let s:Search_Word = input("Search Word: ", s:Search_Word)
+    echo "\r"
+    call s:RefreshAllOptions()
+    call s:Echo("Set Search Word to (" . s:Search_Word .")")
+endfunction
+
+function! s:SetSearchFiles()
+    let g:Grep_Default_Filelist = input("Search Word: ", g:Grep_Default_Filelist)
+    echo "\r"
+    call s:RefreshAllOptions()
+    call s:Echo("Set Search Files to (" . g:Grep_Default_Filelist .")")
+endfunction
+
+function! s:ToggleRecursion()
+    let g:Grep_Recursive = !g:Grep_Recursive
+    call s:RefreshAllOptions()
+    call s:Echo("Set recursive to (" . s:OnOrOff(g:Grep_Recursive) . ")")
+endfunction
+
+function s:ToggleIgnoreCase()
+    let g:Grep_IgnoreCase = !g:Grep_IgnoreCase
+    call s:RefreshAllOptions()
+    call s:Echo("Set ignore case to (" . s:OnOrOff(g:Grep_IgnoreCase) . ")")
+endfunction
+
+function! s:ToggleWholeWord()
+    let g:Grep_WholeWord = !g:Grep_WholeWord
+    call s:RefreshAllOptions()
+    call s:Echo("Set whole word to (" . s:OnOrOff(g:Grep_WholeWord) . ")")
+endfunction
+
+function! s:ToggleRegExp()
+    let g:Grep_ExpReg = !g:Grep_ExpReg
+    call s:RefreshAllOptions()
+    call s:Echo("Set use ExpReg to (" . s:OnOrOff(g:Grep_ExpReg) . ")")
+endfunction
+
+function! s:Quit()
+    let s:OptionsMenuOpen = 0
+    echo ""
+    quit
+endfunction
+
+function! s:Echo(message)
+    let str = ""
+    if !s:OptionsMenuOpen
+        let str .= "[Grep] "
+    endif
+    let str .= a:message
+    echo str
+endfunction
+
+function! s:FillWindow()
+    setlocal modifiable
+    " Clear the entire window
+    execute "silent %delete"
+
+    "call s:CreateOptions()
+    call append(0, s:Options)
+    call s:RefreshAllOptions()
+
+    "setlocal modifiable
+    "call s:UpdateAllSelections()
+    setlocal nomodifiable
+
+    " place the cursor at the start of the special options
+    execute "".len(s:Options)
+endfunction
+
+function! s:OpenOptionsMenu()
+    let s:OptionsMenuOpen = 1
+    call s:CreateOptions()
+    let windowLines = len(s:Options)
+
+    " split the window; fit exactly right
+    exe "keepjumps botright ".windowLines."new"
+
+    setlocal bufhidden=delete
+    setlocal buftype=nofile
+    setlocal nobuflisted
+    setlocal noswapfile
+    setlocal cursorline
+
+    syn match Help    /^".*/
+    highlight def link Help Special
+
+    syn match Activated    /^>\w.*/
+    highlight def link Activated Type
+
+    syn match Selection    /^\ \w.*/
+    highlight def link Selection String
+
+    call s:MapOptionKeys()
+    call s:FillWindow()
+endfunction
+
+function! VimGrepStr()
+    let s:Search_Word = expand("<cword>")
+    call s:OpenOptionsMenu()
+endfunction
+
+function! s:ExecGrep()
+    if s:OptionsMenuOpen == 1
+        let s:OptionsMenuOpen = 0
+        quit
+    endif
+
+    let cmd = ""
+    let grep_opt = ""
+    let grep_expr_option = '--'
+    let startdir = s:Search_Directory
+    let grep_path = g:Grep_Path
+    let pattern = g:Grep_Shell_Quote_Char . s:Search_Word . g:Grep_Shell_Quote_Char
+    let filepattern = g:Grep_Default_Filelist
+
+    if(g:Grep_IgnoreCase == 1)
+        let grep_opt = grep_opt . ' -i'
+    endif
+    if(g:Grep_Recursive == 1)
+        let grep_opt = grep_opt . ' -r'
+    endif
+    if(g:Grep_WholeWord == 1)
+        let grep_opt = grep_opt . ' -w'
+    endif
+    if(g:Grep_ExpReg == 1)
+        let grep_expr_option = '-e'
+    else
+        let grep_opt = grep_opt . ' -F'
+    endif
+
+    let txt = filepattern . ' '
+    let find_file_pattern = ''
+    while txt != ''
+        let one_pattern = strpart(txt, 0, stridx(txt, ' '))
+        if find_file_pattern != ''
+            let find_file_pattern = find_file_pattern . ' -o'
+        endif
+        let find_file_pattern = find_file_pattern . ' -name ' .
+              \ g:Grep_Shell_Quote_Char . one_pattern . g:Grep_Shell_Quote_Char
+        let txt = strpart(txt, stridx(txt, ' ') + 1)
+    endwhile
+    let find_file_pattern = g:Grep_Shell_Escape_Char . '(' .
+                    \ find_file_pattern . ' ' . g:Grep_Shell_Escape_Char . ')'
+
+    let txt = g:Grep_Skip_Dirs
+    let find_prune = ''
+    if txt != ''
+        let txt = txt . ' '
+        while txt != ''
+            let one_dir = strpart(txt, 0, stridx(txt, ' '))
+            if find_prune != ''
+                let find_prune = find_prune . ' -o'
+            endif
+            let find_prune = find_prune . ' -name ' . one_dir
+            let txt = strpart(txt, stridx(txt, ' ') + 1)
+        endwhile
+        let find_prune = '-type d ' . g:Grep_Shell_Escape_Char . '(' .
+                         \ find_prune
+        let find_prune = find_prune . ' ' . g:Grep_Shell_Escape_Char . ')'
+    endif
+
+    let txt = g:Grep_Skip_Files
+    let find_skip_files = '-type f'
+    if txt != ''
+        let txt = txt . ' '
+        while txt != ''
+            let one_file = strpart(txt, 0, stridx(txt, ' '))
+            let find_skip_files = find_skip_files . ' ! -name ' .
+                                  \ g:Grep_Shell_Quote_Char . one_file .
+                                  \ g:Grep_Shell_Quote_Char
+            let txt = strpart(txt, stridx(txt, ' ') + 1)
+        endwhile
+    endif
+
+    if g:Grep_Find_Use_Xargs == 1
+        let cmd = g:Grep_Find_Path . ' "' . startdir . '"'
+        let cmd = cmd . " " . find_prune . " -prune -o"
+        let cmd = cmd . " " . find_skip_files
+        let cmd = cmd . " " . find_file_pattern
+        let cmd = cmd . " -print0 | "
+        let cmd = cmd . g:Grep_Xargs_Path . ' ' . g:Grep_Xargs_Options
+        let cmd = cmd . ' ' . grep_path . " " . grep_opt . " -n "
+        let cmd = cmd . grep_expr_option . " " . pattern
+        let cmd = cmd . ' ' . g:Grep_Null_Device 
+    else
+        let cmd = g:Grep_Find_Path . " " . startdir
+        let cmd = cmd . " " . find_prune . " -prune -o"
+        let cmd = cmd . " " . find_skip_files
+        let cmd = cmd . " " . find_file_pattern
+        let cmd = cmd . " -exec " . grep_path . " " . grep_opt . " -n "
+        let cmd = cmd . grep_expr_option . " " . pattern
+        let cmd = cmd . " {} " . g:Grep_Null_Device . ' ' .
+                         \ g:Grep_Shell_Escape_Char . ';'
+    endif
+    call s:RunGrepCmd(cmd, pattern, "set")
+endfunction
+
 " RunGrepCmd()
 " Run the specified grep command using the supplied pattern
 function! s:RunGrepCmd(cmd, pattern, action)
@@ -452,6 +737,7 @@ function! s:RunGrepCmd(cmd, pattern, action)
     set verbose&vim
 
     exe "redir! > " . tmpfile
+    silent echom "debug info: " . a:cmd . "\n"
     silent echon '[Search results for pattern: ' . a:pattern . "]\n"
     silent echon cmd_output
     redir END
@@ -635,8 +921,8 @@ function! s:RunGrepRecursive(cmd_name, grep_cmd, action, ...)
         let cmd = cmd . " {} " . g:Grep_Null_Device . ' ' .
                          \ g:Grep_Shell_Escape_Char . ';'
     endif
-
-    call s:RunGrepCmd(cmd, pattern, a:action)
+    echom "debug info: " . cmd . "\n"
+    "call s:RunGrepCmd(cmd, pattern, a:action)
 endfunction
 
 " RunGrepSpecial()
@@ -859,6 +1145,8 @@ command! -nargs=* -complete=file Agrep
             \ call s:RunGrep('Agrep', 'agrep', 'set', <f-args>)
 command! -nargs=* -complete=file Ragrep
             \ call s:RunGrepRecursive('Ragrep', 'agrep', 'set', <f-args>)
+command! -nargs=* -complete=file SetGrepOpt
+            \ call s:SetGrepOption()
 
 if v:version >= 700
 command! -nargs=* -complete=file GrepAdd
@@ -884,18 +1172,24 @@ command! -nargs=* -complete=file AgrepAdd
             \ call s:RunGrep('AgrepAdd', 'agrep', 'add', <f-args>)
 command! -nargs=* -complete=file RagrepAdd
             \ call s:RunGrepRecursive('RagrepAdd', 'agrep', 'add', <f-args>)
+command! -nargs=* -complete=file VimGrepStr
+            \ call VimGrepStr()
 endif
 
-" Add the Tools->Search Files menu
+" Add the Find->Grep menu
 if has('gui_running')
-    anoremenu <silent> Tools.Search.Current\ Directory<Tab>:Grep
+    anoremenu <silent> Find.Grep.Current\ Directory<Tab>:Grep
                 \ :Grep<CR>
-    anoremenu <silent> Tools.Search.Recursively<Tab>:Rgrep
+    anoremenu <silent> Find.Grep.Recursively<Tab>:Rgrep
                 \ :Rgrep<CR>
-    anoremenu <silent> Tools.Search.Buffer\ List<Tab>:Bgrep
+    anoremenu <silent> Find.Grep.Buffer\ List<Tab>:Bgrep
                 \ :Bgrep<CR>
-    anoremenu <silent> Tools.Search.Argument\ List<Tab>:GrepArgs
+    anoremenu <silent> Find.Grep.Argument\ List<Tab>:repArgs
                 \ :GrepArgs<CR>
+    menu <silent> Find.Grep.-Sep-
+                \ :
+    anoremenu <silent> Find.Grep.Grep\ Option<Tab>:VimGrepStr
+                \ :VimGrepStr<CR>
 endif
 
 " restore 'cpo'
