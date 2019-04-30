@@ -690,6 +690,52 @@ function! s:ExecGrep()
     call s:RunGrepCmd(cmd, pattern, "set")
 endfunction
 
+func! s:Handler(channel, cmd_output)
+    if cmd_output == ""
+        echohl WarningMsg | 
+        \ echomsg "Error: Pattern " . a:pattern . " not found" | 
+        \ echohl None
+        return
+    endif
+
+    let tmpfile = tempname()
+
+    let old_verbose = &verbose
+    set verbose&vim
+
+    exe "redir! > " . tmpfile
+    silent echom "debug info: " . a:cmd . "\n"
+    silent echon '[Search results for pattern: ' . a:pattern . "]\n"
+    silent echon cmd_output
+    redir END
+
+    let &verbose = old_verbose
+
+    let old_efm = &efm
+    set efm=%f:%\\s%#%l:%m
+
+    if v:version >= 700 && a:action == 'add'
+        execute "silent! caddfile " . tmpfile
+    else
+        if exists(":cgetfile")
+            execute "silent! cgetfile " . tmpfile
+        else
+            execute "silent! cfile " . tmpfile
+        endif
+    endif
+
+    let &efm = old_efm
+
+    " Open the grep output window
+    if g:Grep_OpenQuickfixWindow == 1
+        " Open the quickfix window below the current window
+        botright copen
+    endif
+
+    call delete(tmpfile)
+
+endfunc
+
 " RunGrepCmd()
 " Run the specified grep command using the supplied pattern
 function! s:RunGrepCmd(cmd, pattern, action)
@@ -702,6 +748,7 @@ function! s:RunGrepCmd(cmd, pattern, action)
         " command inside a batch file and call the batch file.
         " Do this only on Win2K, WinXP and above.
         let s:grep_tempfile = fnamemodify(tempname(), ':h') . '\mygrep.cmd'
+
         if v:version >= 700
             call writefile([a:cmd], s:grep_tempfile, "b")
         else
@@ -710,20 +757,31 @@ function! s:RunGrepCmd(cmd, pattern, action)
             redir END
         endif
 
-	let cmd_output = system('"' . s:grep_tempfile . '"')
+        if exists('*job_start')
+            job_start('"' . s:grep_tempfile . '"', {"out_cb", "s:Handler"})
+        else
+            let cmd_output = system('"' . s:grep_tempfile . '"')
+        endif
+
+        " Delete the temporary cmd file created on MS-Windows
+        if exists('s:grep_tempfile')
+            call delete(s:grep_tempfile)
+        endif
     else
-        let cmd_output = system(a:cmd)
+        if exists('*job_start')
+            job_start(a:cmd, {"out_cb", "s:Handler"})
+        else
+            let cmd_output = system(a:cmd)
+        endif
     endif
 
-    if exists('s:grep_tempfile')
-        " Delete the temporary cmd file created on MS-Windows
-        call delete(s:grep_tempfile)
+    if v:version >= 800
+        return
     endif
 
     " Do not check for the shell_error (return code from the command).
     " Even if there are valid matches, grep returns error codes if there
     " are problems with a few input files.
-
     if cmd_output == ""
         echohl WarningMsg | 
         \ echomsg "Error: Pattern " . a:pattern . " not found" | 
