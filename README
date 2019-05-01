@@ -19,7 +19,7 @@ New Feature
 
 1. Run `VimGrepStr` : Open Grep Options
 
-![](https://raw.githubusercontent.com/whatsrtos/grep.vim/master/screen/VimGrepStr.png)
+![](https://github.com/whatsrtos/grep.vim/blob/master/screenshot/VimGrepStr.png?raw=true)
 
 2. Support async
 
