@@ -14,6 +14,16 @@ from the following sites:
    http://gnuwin32.sourceforge.net/packages/grep.htm
    http://gnuwin32.sourceforge.net/packages/findutils.htm
 
+
+New Feature
+
+1. Run `VimGrepStr` : Open Grep Options
+
+![](https://raw.githubusercontent.com/whatsrtos/grep.vim/master/screen/VimGrepStr.png)
+
+2. Support async
+
+
 Usage
 
 The grep.vim plugin introduces the following Vim commands:

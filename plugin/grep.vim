@@ -1,7 +1,7 @@
 " File: grep.vim
 " Author: Yegappan Lakshmanan (yegappan AT yahoo DOT com)
-" Version: 1.11c
-" Last Modified: Sep 21, 2015
+" Version: 1.11d
+" Last Modified: 2019-05-02
 " Overview
 " --------
 " The grep plugin integrates the grep, fgrep, egrep, and agrep tools with
@@ -37,7 +37,7 @@
 " -----
 " The grep.vim plugin introduces the following Vim commands:
 "
-" :VimGrepStr    - 
+" :VimGrepStr    - Open Grep Option 
 " :Grep          - Search for the specified pattern in the specified files
 " :GrepAdd       - Same as ":Grep" but adds the results to the current results
 " :Rgrep         - Run recursive grep
@@ -687,13 +687,15 @@ function! s:ExecGrep()
         let cmd = cmd . " {} " . g:Grep_Null_Device . ' ' .
                          \ g:Grep_Shell_Escape_Char . ';'
     endif
+
     call s:RunGrepCmd(cmd, pattern, "set")
 endfunction
 
-func! s:Handler(channel, cmd_output)
-    if cmd_output == ""
+" s:GrepCallback() {{{2
+function! s:GrepCallback(channel, cmd_output) dict abort
+    if a:cmd_output == ""
         echohl WarningMsg | 
-        \ echomsg "Error: Pattern " . a:pattern . " not found" | 
+        \ echomsg "Error: Pattern " . self:pattern . " not found" | 
         \ echohl None
         return
     endif
@@ -704,34 +706,24 @@ func! s:Handler(channel, cmd_output)
     set verbose&vim
 
     exe "redir! > " . tmpfile
-    silent echom "debug info: " . a:cmd . "\n"
-    silent echon '[Search results for pattern: ' . a:pattern . "]\n"
-    silent echon cmd_output
+    "silent echom "debug info: " . self:cmd . "\n"
+    "silent echon '[Search results for pattern: ' . self:pattern . "]\n"
+    silent echon a:cmd_output
     redir END
 
     let &verbose = old_verbose
-
     let old_efm = &efm
     set efm=%f:%\\s%#%l:%m
 
-    if v:version >= 700 && a:action == 'add'
-        execute "silent! caddfile " . tmpfile
-    else
-        if exists(":cgetfile")
-            execute "silent! cgetfile " . tmpfile
-        else
-            execute "silent! cfile " . tmpfile
-        endif
-    endif
+    execute "silent! caddfile " . tmpfile
 
     let &efm = old_efm
 
-    " Open the grep output window
     if g:Grep_OpenQuickfixWindow == 1
-        " Open the quickfix window below the current window
         botright copen
     endif
 
+    echom tmpfile
     call delete(tmpfile)
 
 endfunc
@@ -739,6 +731,13 @@ endfunc
 " RunGrepCmd()
 " Run the specified grep command using the supplied pattern
 function! s:RunGrepCmd(cmd, pattern, action)
+
+    let l:options = {
+        \ 'cmd':       a:cmd,
+        \ 'pattern':   a:pattern,
+        \ 'action':    a:action
+        \ }
+
     if has('win32') && !has('win32unix') && !has('win95')
                 \ && (&shell =~ 'cmd.exe')
         " Windows does not correctly deal with commands that have more than 1
@@ -758,7 +757,7 @@ function! s:RunGrepCmd(cmd, pattern, action)
         endif
 
         if exists('*job_start')
-            job_start('"' . s:grep_tempfile . '"', {"out_cb", "s:Handler"})
+            call job_start('"' . s:grep_tempfile . '"', {"callback": "GrepCallback"})
         else
             let cmd_output = system('"' . s:grep_tempfile . '"')
         endif
@@ -769,7 +768,8 @@ function! s:RunGrepCmd(cmd, pattern, action)
         endif
     else
         if exists('*job_start')
-            job_start(a:cmd, {"out_cb", "s:Handler"})
+            let l:job_cmd = ['sh', '-c', a:cmd]
+            call job_start(l:job_cmd, {"callback": function('s:GrepCallback', l:options)})
         else
             let cmd_output = system(a:cmd)
         endif
