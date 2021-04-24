@@ -451,7 +451,7 @@ function! s:CreateOptions()
     call add(s:Options, "\"w: Whole word (".s:OnOrOff(g:Grep_WholeWord).")")
     call add(s:Options, "\"p: Regular expression (".s:OnOrOff(g:Grep_ExpReg).")")
     call add(s:Options, "")
-    call add(s:Options, "\"f: Search files: " . g:Grep_Default_Filelist)
+    call add(s:Options, "\"f: Search files(eg. *.c *.h): " . g:Grep_Default_Filelist)
     call add(s:Options, "\"d: Search directory: " . s:Search_Directory)
     call add(s:Options, "\"c: Search Word: " . s:Search_Word)
 endfunction
@@ -500,7 +500,7 @@ function! s:SetSearchWord()
 endfunction
 
 function! s:SetSearchFiles()
-    let g:Grep_Default_Filelist = input("Search Word: ", g:Grep_Default_Filelist)
+    let g:Grep_Default_Filelist = input("Search Files: ", g:Grep_Default_Filelist)
     echo "\r"
     call s:RefreshAllOptions()
     call s:Echo("Set Search Files to (" . g:Grep_Default_Filelist .")")
@@ -691,14 +691,17 @@ function! s:ExecGrep()
     call s:RunGrepCmd(cmd, pattern, "set")
 endfunction
 
-" s:GrepCallback() {{{2
-function! s:GrepCallback(channel, cmd_output) dict abort
-    if a:cmd_output == ""
-        echohl WarningMsg | 
-        \ echomsg "Error: Pattern " . self:pattern . " not found" | 
-        \ echohl None
-        return
-    endif
+
+
+function! s:GrepExitCallback(job, status)
+    call s:Echo('Search finished')
+endfunc
+
+function! s:GrepErrCallback(channel, cmd_output)
+    call s:Echo('Search occur Error:' . a.cmd_output)
+endfunc
+
+function! s:GrepCallback(channel, cmd_output)
 
     let tmpfile = tempname()
 
@@ -706,8 +709,6 @@ function! s:GrepCallback(channel, cmd_output) dict abort
     set verbose&vim
 
     exe "redir! > " . tmpfile
-    "silent echom "debug info: " . self:cmd . "\n"
-    "silent echon '[Search results for pattern: ' . self:pattern . "]\n"
     silent echon a:cmd_output
     redir END
 
@@ -715,6 +716,8 @@ function! s:GrepCallback(channel, cmd_output) dict abort
     let old_efm = &efm
     set efm=%f:%\\s%#%l:%m
 
+    " add tmpfile to quickfix
+    call s:Echo('Add results from ' . tmpfile)
     execute "silent! caddfile " . tmpfile
 
     let &efm = old_efm
@@ -723,9 +726,8 @@ function! s:GrepCallback(channel, cmd_output) dict abort
         botright copen
     endif
 
-    echom tmpfile
     call delete(tmpfile)
-
+    call s:Echo('GrepCallback finished.')
 endfunc
 
 " RunGrepCmd()
@@ -737,6 +739,15 @@ function! s:RunGrepCmd(cmd, pattern, action)
         \ 'pattern':   a:pattern,
         \ 'action':    a:action
         \ }
+
+    " clear quickfix list
+    call setqflist([])
+    call s:Echo('Searching [' . s:Search_Word . '] in directory [' .s:Search_Directory . '] ...')
+    
+    " output cmd to debug file
+    exe "redir! > /tmp/debug-vim-grep-last-cmd"
+    silent echom "debug info: " . a:cmd . "\n"
+    redir END
 
     if has('win32') && !has('win32unix') && !has('win95')
                 \ && (&shell =~ 'cmd.exe')
@@ -767,13 +778,24 @@ function! s:RunGrepCmd(cmd, pattern, action)
             call delete(s:grep_tempfile)
         endif
     else
+        " job_start(cmd, {
+        "   callback: Callback for something to read on any part of the channel
+        "   err_cb: Callback for when there is something to read on stderr
+        "   exit_cb: Callback for when the job ends
+        " })
         if exists('*job_start')
             let l:job_cmd = ['sh', '-c', a:cmd]
-            call job_start(l:job_cmd, {"callback": function('s:GrepCallback', l:options)})
+            call job_start(l:job_cmd, {
+            \    "out_cb":   function('s:GrepCallback'),
+            \    "err_cb":   function('s:GrepErrCallback'),
+            \    "exit_cb":  function('s:GrepExitCallback'),
+            \ })
+                    
         else
             let cmd_output = system(a:cmd)
         endif
     endif
+
 
     if v:version >= 800
         return
